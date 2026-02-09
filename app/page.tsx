@@ -41,7 +41,7 @@ export default function Home() {
         if (accounts.length > 0) {
           const network = await provider.getNetwork();
           // Check if we are on Base (8453)
-          if (network.chainId !== 8453n) {
+          if (network.chainId !== BigInt(8453)) {
              setStatus("Wrong Network. Please switch to Base.");
              return;
           }
