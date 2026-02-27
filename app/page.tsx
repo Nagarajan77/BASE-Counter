@@ -11,9 +11,10 @@ declare global {
 }
 
 // --- CONFIGURATION FOR BASE MAINNET ---
-const CONTRACT_ADDRESS = "0x85D259151eCC83ef98B4b124FAaa960f67Ed5e09"; // <--- PASTE NEW BASE ADDRESS HERE
+const CONTRACT_ADDRESS = "0x85D259151eCC83ef98B4b124FAaa960f67Ed5e09"; 
 const BASE_CHAIN_ID = "0x2105"; // Hex for 8453
 const BASE_RPC_URL = "https://mainnet.base.org";
+const BUILDER_CODE = "bc_5ptyb1wj"; // <--- ADDED BUILDER CODE
 
 const ABI = [
   { "anonymous": false, "inputs": [{ "indexed": false, "internalType": "uint256", "name": "newCount", "type": "uint256" }], "name": "CountChanged", "type": "event" },
@@ -40,7 +41,6 @@ export default function Home() {
         const accounts = await provider.listAccounts();
         if (accounts.length > 0) {
           const network = await provider.getNetwork();
-          // Check if we are on Base (8453)
           if (network.chainId !== BigInt(8453)) {
              setStatus("Wrong Network. Please switch to Base.");
              return;
@@ -54,7 +54,6 @@ export default function Home() {
     }
   };
 
-  // --- NEW: ROBUST NETWORK SWITCHER ---
   const switchToBase = async () => {
     if (!window.ethereum) return;
     try {
@@ -64,7 +63,6 @@ export default function Home() {
       });
       return true;
     } catch (switchError: any) {
-      // This error code 4902 means the chain has not been added to MetaMask.
       if (switchError.code === 4902) {
         try {
           await window.ethereum.request({
@@ -101,11 +99,9 @@ export default function Home() {
     setIsLoading(true);
     setStatus("Connecting...");
     try {
-      // 1. Ensure we are on Base
       const switched = await switchToBase();
       if (!switched) return;
 
-      // 2. Request accounts
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
@@ -138,7 +134,6 @@ export default function Home() {
     setStatus("Please confirm transaction...");
 
     try {
-      // Double check network before sending tx
       const switched = await switchToBase();
       if (!switched) throw new Error("Wrong network");
 
@@ -146,7 +141,31 @@ export default function Home() {
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-      const tx = action === "increment" ? await contract.increment() : await contract.decrement();
+      // --- MODIFIED CODE START ---
+      
+     // 1. Populate the basic transaction without sending it yet
+      const txReq = await contract[action].populateTransaction();
+
+      // 2. Format the ERC-8021 Builder Code Suffix
+      const codeBytes = ethers.toUtf8Bytes(BUILDER_CODE);
+      const codeHex = ethers.hexlify(codeBytes).replace("0x", "");
+      
+      // Calculate string length in hex (length 11 becomes "0b")
+      const codeLengthHex = codeBytes.length.toString(16).padStart(2, "0"); 
+      
+      const schemaId = "00";
+      const ercMarker = "80218021802180218021802180218021"; // 32 characters (16 bytes)
+
+      // Combine them in the exact order ERC-8021 expects
+      const dataSuffix = codeHex + codeLengthHex + schemaId + ercMarker;
+
+      // 3. Append the formatted suffix to the transaction calldata
+      txReq.data = txReq.data + dataSuffix;
+
+      // 4. Send the properly tagged transaction
+      const tx = await signer.sendTransaction(txReq);
+      
+      // --- MODIFIED CODE END ---
       
       setStatus("Mining transaction... (Please wait)");
       await tx.wait(); 
@@ -177,7 +196,7 @@ export default function Home() {
       {/* --- NAVBAR --- */}
       <div className="absolute top-0 w-full p-6 flex justify-between items-center max-w-4xl">
         <div className="text-xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-white">
-          BASE COUNTER 🔵
+          BASE TAP 🔵
         </div>
         
         {account ? (
